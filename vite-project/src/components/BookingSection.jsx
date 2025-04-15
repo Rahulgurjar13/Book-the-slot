@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const BookingSection = ({ events, slots, setSlots, showNotification }) => {
-  const [bookingForm, setBookingForm] = useState({ name: '', email: '', enrollment: '' });
-  const [selectedEvent, setSelectedEvent] = useState(events.length > 0 ? events[0]._id : null);
+  const [bookingForm, setBookingForm] = useState({ name: '', email: '', enrollment: '', phone: '' });
+  const [selectedEvent, setSelectedEvent] = useState(events?.length > 0 ? events[0]._id : null);
   const [activeDay, setActiveDay] = useState(new Date().toLocaleDateString('en-US', { weekday: 'long' }));
   const [currentSlot, setCurrentSlot] = useState(null);
   const [weekStartDate, setWeekStartDate] = useState(getStartOfWeek(new Date()));
@@ -24,7 +24,7 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     const options = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
-    return date.toLocaleDateString('en-US', options); // e.g., "Saturday, April 12, 2025"
+    return date.toLocaleDateString('en-US', options);
   };
 
   const getWeekDates = () => {
@@ -51,21 +51,21 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
   };
 
   const getSlotsForDay = (day) => {
-    if (!slots || !slots.length) return [];
+    if (!slots || !slots.length || !selectedEvent) return [];
     const weekDates = getWeekDates();
     const targetDate = weekDates.find((d) => getDayName(d) === day);
     if (!targetDate) return [];
 
     const targetDateString = targetDate.toISOString().split('T')[0];
     return slots
-      .filter((slot) => slot.eventId._id === selectedEvent && slot.date === targetDateString)
+      .filter((slot) => slot.eventId?._id === selectedEvent && slot.date === targetDateString)
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
   };
 
   const getAllSlots = () => {
-    if (!slots || !slots.length) return [];
+    if (!slots || !slots.length || !selectedEvent) return [];
     return slots
-      .filter((slot) => slot.eventId._id === selectedEvent)
+      .filter((slot) => slot.eventId?._id === selectedEvent)
       .sort((a, b) => {
         if (a.date < b.date) return -1;
         if (a.date > b.date) return 1;
@@ -80,32 +80,31 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
       return;
     }
 
-    if (!bookingForm.name || !bookingForm.email || !bookingForm.enrollment) {
+    if (!bookingForm.name || !bookingForm.email || !bookingForm.enrollment || !bookingForm.phone) {
       showNotification('Please fill in all fields', 'error');
+      return;
+    }
+
+    const bookedCount = currentSlot.bookedBy?.length || 0;
+    const capacity = currentSlot.capacity || 1;
+    if (bookedCount >= capacity) {
+      showNotification('This slot is already full', 'error');
       return;
     }
 
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
     try {
       const res = await axios.post(`${apiUrl}/slots/${currentSlot._id}/book`, {
-        ...bookingForm,
-        status: 'booked',
+        name: bookingForm.name,
+        email: bookingForm.email,
+        enrollment: bookingForm.enrollment,
+        phone: bookingForm.phone,
       });
 
-      const updatedSlot = {
-        ...currentSlot,
-        status: 'booked',
-        bookedBy: {
-          name: bookingForm.name,
-          email: bookingForm.email,
-          enrollment: bookingForm.enrollment,
-        },
-      };
-
-      setSlots(slots.map((slot) => (slot._id === currentSlot._id ? updatedSlot : slot)));
+      setSlots(slots.map((slot) => (slot._id === currentSlot._id ? res.data : slot)));
       setIsBookingModalOpen(false);
       setCurrentSlot(null);
-      setBookingForm({ name: '', email: '', enrollment: '' });
+      setBookingForm({ name: '', email: '', enrollment: '', phone: '' });
       showNotification('Slot booked successfully!');
     } catch (error) {
       console.error('Booking error:', error.response?.data || error.message);
@@ -131,19 +130,25 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
   };
 
   const startBooking = (slot) => {
+    const bookedCount = slot.bookedBy?.length || 0;
+    const capacity = slot.capacity || 1;
+    if (bookedCount >= capacity) {
+      showNotification('This slot is already full', 'error');
+      return;
+    }
     setCurrentSlot(slot);
     setIsBookingModalOpen(true);
   };
 
   const getCurrentEventName = () => {
-    const event = events.find((e) => e._id === selectedEvent);
+    const event = events?.find((e) => e._id === selectedEvent);
     return event ? event.name : 'Selected Event';
   };
 
   const formatSlotDate = (dateString) => {
     const date = new Date(dateString);
     const options = { weekday: 'short', month: 'short', day: 'numeric' };
-    return date.toLocaleDateString('en-US', options); // e.g., "Sat, Apr 12"
+    return date.toLocaleDateString('en-US', options);
   };
 
   const weekDates = getWeekDates();
@@ -154,7 +159,7 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
       <div className="mb-6 sm:mb-8">
         <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4">Select an Event</h2>
 
-        {events.length === 0 ? (
+        {!events?.length ? (
           <div className="bg-white rounded-lg shadow p-4 sm:p-6 text-center">
             <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -212,7 +217,6 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
               </div>
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                {/* Calendar/List View Toggle */}
                 <div className="flex bg-white bg-opacity-20 rounded-lg p-1">
                   <button
                     onClick={() => setViewMode('calendar')}
@@ -234,7 +238,6 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                   </button>
                 </div>
 
-                {/* Navigation Controls - Only show in calendar view */}
                 {viewMode === 'calendar' && (
                   <div className="flex space-x-2">
                     <button
@@ -276,7 +279,6 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
           {/* Calendar View */}
           {viewMode === 'calendar' && (
             <>
-              {/* Days of the week - Horizontal strip */}
               <div className="grid grid-cols-7 border-b border-gray-200 overflow-x-auto snap-x snap-mandatory">
                 {weekDates.map((date, index) => {
                   const dayName = getDayName(date);
@@ -315,7 +317,6 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                 })}
               </div>
 
-              {/* Slots for selected day */}
               <div className="p-4 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
                   <h3 className="text-base sm:text-lg font-medium text-gray-900">
@@ -328,7 +329,7 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                     </span>
                     <span className="flex items-center">
                       <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-500 mr-1"></span>
-                      Booked
+                      Full
                     </span>
                   </div>
                 </div>
@@ -345,54 +346,63 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-                    {getSlotsForDay(activeDay).map((slot) => (
-                      <div
-                        key={slot._id}
-                        className={`relative rounded-lg border transition-all duration-150 overflow-hidden ${
-                          slot.status === 'available' ? 'border-green-200 hover:border-green-400 hover:shadow-md' : 'border-gray-200 bg-gray-50'
-                        }`}
-                      >
-                        <div className={`h-1 w-full ${slot.status === 'available' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                        <div className="p-3 sm:p-4">
-                          <div className="flex justify-between mb-2">
-                            <div className="flex items-center">
-                              <svg
-                                className={`w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-1.5 ${slot.status === 'available' ? 'text-green-500' : 'text-red-500'}`}
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
+                    {getSlotsForDay(activeDay).map((slot) => {
+                      const isFull = (slot.bookedBy?.length || 0) >= (slot.capacity || 1);
+                      const bookedNames = slot.bookedBy?.length > 0 ? slot.bookedBy.map((b) => b.name).join(', ') : 'None';
+                      return (
+                        <div
+                          key={slot._id}
+                          className={`relative rounded-lg border transition-all duration-150 overflow-hidden ${
+                            !isFull ? 'border-green-200 hover:border-green-400 hover:shadow-md' : 'border-gray-200 bg-gray-50'
+                          }`}
+                        >
+                          <div className={`h-1 w-full ${!isFull ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                          <div className="p-3 sm:p-4">
+                            <div className="flex justify-between mb-2">
+                              <div className="flex items-center">
+                                <svg
+                                  className={`w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-1.5 ${!isFull ? 'text-green-500' : 'text-red-500'}`}
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="text-sm sm:text-base font-medium text-gray-900">
+                                  {slot.startTime} - {slot.endTime}
+                                </span>
+                              </div>
+                              <span
+                                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                  !isFull ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                }`}
                               >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span className="text-sm sm:text-base font-medium text-gray-900">
-                                {slot.startTime} - {slot.endTime}
+                                {(slot.bookedBy?.length || 0)}/{slot.capacity || 1} booked
                               </span>
                             </div>
-                            {slot.status === 'available' ? (
-                              <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-0.5 rounded-full">Open</span>
+                            <p className="text-xs sm:text-sm text-gray-600 mb-2 sm:mb-3 line-clamp-2">{slot.purpose}</p>
+                            <div className="text-xs sm:text-sm text-gray-600 mb-2 sm:mb-3">
+                              <span className="font-medium">Booked by:</span> {bookedNames}
+                            </div>
+                            {!isFull ? (
+                              <button
+                                onClick={() => startBooking(slot)}
+                                className="w-full flex items-center justify-center px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm rounded transition-colors duration-150"
+                              >
+                                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                </svg>
+                                Book This Slot
+                              </button>
                             ) : (
-                              <span className="bg-red-100 text-red-800 text-xs font-medium px-2 py-0.5 rounded-full">Taken</span>
+                              <div className="w-full py-1.5 sm:py-2 text-center text-gray-500 text-xs sm:text-sm bg-gray-100 rounded cursor-not-allowed">
+                                <span>Slot Full</span>
+                              </div>
                             )}
                           </div>
-                          <p className="text-xs sm:text-sm text-gray-600 mb-2 sm:mb-3 line-clamp-2">{slot.purpose}</p>
-                          {slot.status === 'available' ? (
-                            <button
-                              onClick={() => startBooking(slot)}
-                              className="w-full flex items-center justify-center px-3 py-1.5 sm:px-4 sm:py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm rounded transition-colors duration-150"
-                            >
-                              <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                              </svg>
-                              Book This Slot
-                            </button>
-                          ) : (
-                            <div className="w-full py-1.5 sm:py-2 text-center text-gray-500 text-xs sm:text-sm bg-gray-100 rounded cursor-not-allowed">
-                              <span>Booked by: {slot.bookedBy?.name || 'Anonymous'}</span>
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -411,7 +421,7 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                   </span>
                   <span className="flex items-center">
                     <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-500 mr-1"></span>
-                    Booked
+                    Full
                   </span>
                 </div>
               </div>
@@ -441,7 +451,10 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                           Purpose
                         </th>
                         <th scope="col" className="px-3 py-2 sm:px-4 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
+                          Capacity
+                        </th>
+                        <th scope="col" className="px-3 py-2 sm:px-4 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Booked By
                         </th>
                         <th scope="col" className="px-3 py-2 sm:px-4 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Action
@@ -449,43 +462,45 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {getAllSlots().map((slot) => (
-                        <tr key={slot._id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-3 py-3 sm:px-4 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">{formatSlotDate(slot.date)}</td>
-                          <td className="px-3 py-3 sm:px-4 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium text-gray-900">
-                            {slot.startTime} - {slot.endTime}
-                          </td>
-                          <td className="px-3 py-3 sm:px-4 sm:py-4 text-xs sm:text-sm text-gray-500 max-w-[100px] sm:max-w-xs truncate">{slot.purpose}</td>
-                          <td className="px-3 py-3 sm:px-4 sm:py-4 whitespace-nowrap">
-                            {slot.status === 'available' ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                <span className="w-2 h-2 bg-green-500 rounded-full mr-1"></span>
-                                Available
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                <span className="w-2 h-2 bg-red-500 rounded-full mr-1"></span>
-                                Booked
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-3 sm:px-4 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium">
-                            {slot.status === 'available' ? (
-                              <button
-                                onClick={() => startBooking(slot)}
-                                className="inline-flex items-center px-2 py-1 sm:px-3 sm:py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors"
+                      {getAllSlots().map((slot) => {
+                        const isFull = (slot.bookedBy?.length || 0) >= (slot.capacity || 1);
+                        const bookedNames = slot.bookedBy?.length > 0 ? slot.bookedBy.map((b) => b.name).join(', ') : 'None';
+                        return (
+                          <tr key={slot._id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-3 py-3 sm:px-4 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900">{formatSlotDate(slot.date)}</td>
+                            <td className="px-3 py-3 sm:px-4 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium text-gray-900">
+                              {slot.startTime} - {slot.endTime}
+                            </td>
+                            <td className="px-3 py-3 sm:px-4 sm:py-4 text-xs sm:text-sm text-gray-500 max-w-[100px] sm:max-w-xs truncate">{slot.purpose}</td>
+                            <td className="px-3 py-3 sm:px-4 sm:py-4 whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  !isFull ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                }`}
                               >
-                                <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                </svg>
-                                Book
-                              </button>
-                            ) : (
-                              <span className="text-gray-500 text-xs">Booked by: {slot.bookedBy?.name || 'Anonymous'}</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                                <span className={`w-2 h-2 rounded-full mr-1 ${!isFull ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                                {(slot.bookedBy?.length || 0)}/{slot.capacity || 1}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 sm:px-4 sm:py-4 text-xs sm:text-sm text-gray-600 truncate">{bookedNames}</td>
+                            <td className="px-3 py-3 sm:px-4 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium">
+                              {!isFull ? (
+                                <button
+                                  onClick={() => startBooking(slot)}
+                                  className="inline-flex items-center px-2 py-1 sm:px-3 sm:py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md transition-colors"
+                                >
+                                  <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                  </svg>
+                                  Book
+                                </button>
+                              ) : (
+                                <span className="text-gray-500 text-xs">Slot Full</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -518,7 +533,6 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                 <div className="p-4 sm:p-6">
                   <div className="bg-blue-50 rounded-lg p-3 sm:p-4 mb-4 sm:mb-5">
                     <h4 className="text-xs sm:text-sm font-semibold text-gray-900 mb-2 sm:mb-3">Booking Details</h4>
-
                     <div className="space-y-2 text-xs sm:text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-600">Event:</span>
@@ -537,6 +551,12 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                       <div className="flex justify-between">
                         <span className="text-gray-600">Purpose:</span>
                         <span className="font-medium text-gray-900">{currentSlot.purpose}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Capacity:</span>
+                        <span className="font-medium text-gray-900">
+                          {(currentSlot.bookedBy?.length || 0)}/{currentSlot.capacity || 1}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -557,7 +577,6 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                           required
                         />
                       </div>
-
                       <div>
                         <label htmlFor="email" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                           Email Address
@@ -572,7 +591,6 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                           required
                         />
                       </div>
-
                       <div>
                         <label htmlFor="enrollment" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                           Enrollment/ID Number
@@ -587,8 +605,21 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                           required
                         />
                       </div>
+                      <div>
+                        <label htmlFor="phone" className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                          Phone Number
+                        </label>
+                        <input
+                          type="tel"
+                          id="phone"
+                          className="w-full rounded-md border border-gray-300 px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          placeholder="Enter your phone number"
+                          value={bookingForm.phone}
+                          onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value })}
+                          required
+                        />
+                      </div>
                     </div>
-
                     <div className="mt-4 sm:mt-6">
                       <button
                         type="submit"
@@ -601,7 +632,6 @@ const BookingSection = ({ events, slots, setSlots, showNotification }) => {
                       </button>
                     </div>
                   </form>
-
                   <div className="mt-3 sm:mt-4 text-center text-xs text-gray-500">By booking this slot, you agree to the terms and conditions</div>
                 </div>
               </div>

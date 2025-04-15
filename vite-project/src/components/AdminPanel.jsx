@@ -2,18 +2,18 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
-import { 
-  Calendar, 
-  ChevronLeft, 
-  ChevronRight, 
-  LogOut, 
-  LayoutDashboard, 
-  Calendar as CalendarIcon, 
-  Plus, 
-  Edit, 
-  Trash2, 
-  Search, 
-  ExternalLink, 
+import {
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  LayoutDashboard,
+  Calendar as CalendarIcon,
+  Plus,
+  Edit,
+  Trash2,
+  Search,
+  ExternalLink,
   AlertCircle,
   X,
   CheckCircle,
@@ -28,7 +28,7 @@ const AdminPanel = () => {
   const [stats, setStats] = useState({ total: 0, available: 0, booked: 0 });
   const [newEvent, setNewEvent] = useState({ name: '', description: '' });
   const [editEvent, setEditEvent] = useState(null);
-  const [newSlot, setNewSlot] = useState({ date: '', startTime: '', endTime: '', purpose: '' });
+  const [newSlot, setNewSlot] = useState({ date: '', startTime: '', endTime: '', purpose: '', capacity: 1 });
   const [editSlot, setEditSlot] = useState(null);
   const [eventToDelete, setEventToDelete] = useState(null);
   const [activeSection, setActiveSection] = useState('dashboard');
@@ -49,7 +49,8 @@ const AdminPanel = () => {
     daysOfWeek: [],
     startTime: '',
     endTime: '',
-    purpose: ''
+    purpose: '',
+    capacity: 1
   });
   const navigate = useNavigate();
 
@@ -112,6 +113,19 @@ const AdminPanel = () => {
       }
     };
     fetchData();
+
+    // Polling for real-time slot updates
+    const interval = setInterval(async () => {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      try {
+        const slotsRes = await axios.get(`${apiUrl}/slots`, { headers: { 'x-auth-token': token } });
+        setSlots(slotsRes.data || []);
+      } catch (error) {
+        console.error('Polling error:', error.response?.data || error.message);
+      }
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(interval); // Cleanup on unmount
   }, [navigate]);
 
   useEffect(() => {
@@ -134,7 +148,7 @@ const AdminPanel = () => {
   const getWeekDates = () => {
     const days = [];
     const start = new Date(weekStartDate);
-    start.setDate(start.getDate() - start.getDay()); // Start from Sunday
+    start.setDate(start.getDate() - start.getDay());
     for (let i = 0; i < 7; i++) {
       const date = new Date(start);
       date.setDate(start.getDate() + i);
@@ -306,6 +320,10 @@ const AdminPanel = () => {
       showNotification('Please select an event first', 'error');
       return;
     }
+    if (!newSlot.date || !newSlot.startTime || !newSlot.endTime || !newSlot.purpose || newSlot.capacity < 1) {
+      showNotification('Please fill in all slot fields with valid values', 'error');
+      return;
+    }
 
     const token = localStorage.getItem('token');
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -316,7 +334,7 @@ const AdminPanel = () => {
         { headers: { 'x-auth-token': token } }
       );
       setSlots([...slots, res.data]);
-      setNewSlot({ date: '', startTime: '', endTime: '', purpose: '' });
+      setNewSlot({ date: '', startTime: '', endTime: '', purpose: '', capacity: 1 });
       showNotification('Slot created successfully!');
     } catch (error) {
       console.error('Create slot error:', error.response?.data || error.message);
@@ -338,9 +356,9 @@ const AdminPanel = () => {
       return;
     }
 
-    const { startDate, endDate, daysOfWeek, startTime, endTime, purpose } = batchSlotData;
-    if (!startDate || !endDate || daysOfWeek.length === 0 || !startTime || !endTime || !purpose) {
-      showNotification('Please fill in all batch slot fields', 'error');
+    const { startDate, endDate, daysOfWeek, startTime, endTime, purpose, capacity } = batchSlotData;
+    if (!startDate || !endDate || daysOfWeek.length === 0 || !startTime || !endTime || !purpose || capacity < 1) {
+      showNotification('Please fill in all batch slot fields with valid values', 'error');
       return;
     }
 
@@ -359,14 +377,14 @@ const AdminPanel = () => {
       const newSlots = [];
       for (const date of slotDates) {
         const dateString = date.toISOString().split('T')[0];
-        const slotData = { date: dateString, startTime, endTime, purpose, eventId: selectedEvent };
+        const slotData = { date: dateString, startTime, endTime, purpose, capacity, eventId: selectedEvent };
         const res = await axios.post(`${apiUrl}/slots`, slotData, { headers: { 'x-auth-token': token } });
         newSlots.push(res.data);
       }
 
       setSlots([...slots, ...newSlots]);
       setIsCreatingBatch(false);
-      setBatchSlotData({ startDate: '', endDate: '', daysOfWeek: [], startTime: '', endTime: '', purpose: '' });
+      setBatchSlotData({ startDate: '', endDate: '', daysOfWeek: [], startTime: '', endTime: '', purpose: '', capacity: 1 });
       showNotification(`Successfully created ${newSlots.length} slots!`);
     } catch (error) {
       console.error('Create batch slots error:', error.response?.data || error.message);
@@ -394,11 +412,17 @@ const AdminPanel = () => {
   const handleEditSlot = async (e) => {
     e.preventDefault();
     if (!editSlot) return;
+    if (!editSlot.date || !editSlot.startTime || !editSlot.endTime || !editSlot.purpose || editSlot.capacity < 1) {
+      showNotification('Please fill in all slot fields with valid values', 'error');
+      return;
+    }
 
     const token = localStorage.getItem('token');
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    // Exclude status from payload
+    const { status, bookedBy, eventId, ...payload } = editSlot;
     try {
-      const res = await axios.put(`${apiUrl}/slots/${editSlot._id}`, editSlot, {
+      const res = await axios.put(`${apiUrl}/slots/${editSlot._id}`, payload, {
         headers: { 'x-auth-token': token },
       });
       setSlots(slots.map((slot) => (slot._id === editSlot._id ? res.data : slot)));
@@ -448,7 +472,7 @@ const AdminPanel = () => {
       const day = slotDate.toLocaleDateString('en-US', { weekday: 'long' });
       const matchesDay = !activeDay || day === activeDay;
       const matchesEvent = !selectedEvent || slot.eventId?._id === selectedEvent;
-      const searchString = `${new Date(slot.date).toLocaleDateString()} ${slot.startTime} ${slot.endTime} ${slot.status} ${slot.purpose}`.toLowerCase();
+      const searchString = `${new Date(slot.date).toLocaleDateString()} ${slot.startTime} ${slot.endTime} ${slot.status} ${slot.purpose} ${slot.capacity}`.toLowerCase();
       const matchesSearch = !searchTerm || searchString.includes(searchTerm.toLowerCase());
       const matchesStatus =
         filterStatus === 'all' ||
@@ -897,6 +921,18 @@ const AdminPanel = () => {
                           required
                         />
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
+                        <input
+                          type="number"
+                          value={newSlot.capacity}
+                          onChange={(e) => setNewSlot({ ...newSlot, capacity: parseInt(e.target.value) })}
+                          className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          placeholder="Number of people"
+                          min="1"
+                          required
+                        />
+                      </div>
                     </div>
                     <div className="flex justify-end">
                       <button
@@ -980,6 +1016,18 @@ const AdminPanel = () => {
                           onChange={(e) => setBatchSlotData({ ...batchSlotData, purpose: e.target.value })}
                           className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                           placeholder="e.g., Meeting, Consultation"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
+                        <input
+                          type="number"
+                          value={batchSlotData.capacity}
+                          onChange={(e) => setBatchSlotData({ ...batchSlotData, capacity: parseInt(e.target.value) })}
+                          className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          placeholder="Number of people"
+                          min="1"
                           required
                         />
                       </div>
@@ -1070,6 +1118,9 @@ const AdminPanel = () => {
                                 <span className={`px-2 py-0.5 rounded-full ${slot.status === 'available' ? 'bg-green-100 text-green-800' : 'bg-purple-100 text-purple-800'}`}>
                                   {slot.status}
                                 </span>
+                                <span className="ml-2 px-2 py-0.5 bg-gray-100 text-gray-800 rounded-full">
+                                  Capacity: {slot.capacity}
+                                </span>
                               </div>
                             </div>
                             <div className="flex space-x-2">
@@ -1131,6 +1182,7 @@ const AdminPanel = () => {
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Purpose</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Capacity</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booked By</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
@@ -1146,14 +1198,21 @@ const AdminPanel = () => {
                                 {slot.status}
                               </span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              {slot.status === 'booked' && slot.bookedBy ? (
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">{slot.capacity}</td>
+                            <td className="px-6 py-4 text-sm">
+                              {slot.bookedBy && slot.bookedBy.length > 0 ? (
                                 <div>
-                                  <span className="block">{slot.bookedBy.name}</span>
-                                  <span className="text-xs text-gray-500">{slot.bookedBy.email}</span>
+                                  {slot.bookedBy.map((user, index) => (
+                                    <div key={index} className="mb-2">
+                                      <span className="block font-medium">{user.name || 'Unknown'}</span>
+                                      <span className="block text-xs text-gray-500">Email: {user.email || 'N/A'}</span>
+                                      <span className="block text-xs text-gray-500">Enrollment: {user.enrollment || 'N/A'}</span>
+                                      <span className="block text-xs text-gray-500">Phone: {user.phone || 'N/A'}</span>
+                                    </div>
+                                  ))}
                                 </div>
                               ) : (
-                                <span className="text-gray-500">-</span>
+                                <span className="text-gray-500">No users booked</span>
                               )}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -1297,16 +1356,31 @@ const AdminPanel = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
-                  value={editSlot.status}
-                  onChange={(e) => setEditSlot({ ...editSlot, status: e.target.value })}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
+                <input
+                  type="number"
+                  value={editSlot.capacity}
+                  onChange={(e) => setEditSlot({ ...editSlot, capacity: parseInt(e.target.value) })}
                   className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                  <option value="available">Available</option>
-                  <option value="booked">Booked</option>
-                </select>
+                  min={editSlot.bookedBy?.length || 1}
+                  required
+                />
               </div>
+              {editSlot.bookedBy && editSlot.bookedBy.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Booked By</label>
+                  <div className="p-2 border border-gray-300 rounded-md bg-gray-50">
+                    {editSlot.bookedBy.map((user, index) => (
+                      <div key={index} className="text-sm mb-2">
+                        <span className="block font-medium">{user.name || 'Unknown'}</span>
+                        <span className="block text-xs text-gray-500">Email: {user.email || 'N/A'}</span>
+                        <span className="block text-xs text-gray-500">Enrollment: {user.enrollment || 'N/A'}</span>
+                        <span className="block text-xs text-gray-500">Phone: {user.phone || 'N/A'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
